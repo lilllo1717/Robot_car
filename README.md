@@ -24,8 +24,9 @@ This project is part of our Electronics Club and focuses on building a **4-wheel
 
 ### 📸 Current State of the Robot  
 
+<p align="center">
+  <img src="images/IMG_0807.jpg" width="350">
+</p>
 
-```markdown
-![Robot car current state](images/IMG_0807.jpg)
 
 
