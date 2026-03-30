@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <OPT3101.h>
+#include <Servo.h>
 
 // WHEELS 
 
@@ -22,7 +23,7 @@
 #define AFSTAND_M 1
 #define AFSTAND_R 2
 
-#define AFSTAND 200
+#define AFSTAND 150
 // ENCODERS
 // #define ENC_RL_A 2
 // #define ENC_RR_A 3
@@ -35,18 +36,30 @@
 // #define ENC_FR_B 36
 
 OPT3101 sensor;
+Servo servo1;
 
 const uint8_t dataReadyPin = 18;
 
 volatile bool dataReady = false;
 bool AfstandRenewedCycle = false;
+unsigned long stateStartTime = 0;
 
+enum RobotState
+{
+  DRIVE_FORWARD,
+  TURN_LEFT,
+  TURN_RIGHT,
+  BACKING_UP,
+  BACKING_UP_OBS_RIGHT,
+  BACKING_UP_OBS_LEFT,
+};
 
 void setDataReadyFlag()
 {
   dataReady = true;
 }
 
+RobotState robotState = DRIVE_FORWARD;
 
 const int DETECTION_DISTANCE_MM = 300;
 const uint16_t MIN_VALID_AMPLITUDE = 150;
@@ -64,12 +77,12 @@ bool obstacleLeft = false;
 bool obstacleCenter = false;
 bool obstacleRight = false;
 
-int speedForward = 55;
-int speedTurn = 55;
-int speedBackward = 50;
+int speedForward = 70;
+int speedTurn = 100;
+int speedBackward = 100;
 
 const unsigned long FORWARD_STEP_MS = 30;
-const unsigned long BACKUP_STEP_MS = 35;
+const unsigned long BACKUP_STEP_MS = 100;
 const unsigned long TURN_STEP_MS = 30;
 
 const unsigned long BACKUP_TOTAL_MS = 180;
@@ -78,24 +91,18 @@ const unsigned long TURN_LARGE_TOTAL_MS = 500;
 
 int blockedCount = 0;
 
-enum RobotState
-{
-  DRIVE_FORWARD,
-  BACKING_UP,
-  TURNING_LEFT,
-  TURNING_RIGHT
-};
-
-RobotState robotState = DRIVE_FORWARD;
-unsigned long stateStartTime = 0;
-unsigned long lastMotionUpdate = 0;
-
 void stopMotors()
 {
   analogWrite(M1_PWM1, 0);
   analogWrite(M1_PWM2, 0);
   analogWrite(M2_PWM1, 0);
   analogWrite(M2_PWM2, 0);
+}
+
+void changeRobotState(RobotState state)
+{
+  robotState = state;
+  stateStartTime = millis();
 }
 
 void forward()
@@ -168,6 +175,8 @@ void setup()
   pinMode(M1_PWM1, OUTPUT);
   pinMode(M1_PWM2, OUTPUT);
 
+  servo1.attach(9);
+
   // pinMode(ENC_RL_A, INPUT_PULLUP);
   // pinMode(ENC_RR_A, INPUT_PULLUP);
   // pinMode(ENC_FL_A, INPUT_PULLUP);
@@ -203,49 +212,149 @@ void setup()
 void getSensorData()
 {
 
-  if (dataReady)
+  if (!dataReady)
+    return;
+  dataReady = false;
+  // Serial.println("Data ready");
+  sensor.readOutputRegs();
+
+  // Serial.print("sensor.amplitude: ");
+  // Serial.println(sensor.amplitude);
+
+  // Serial.print("sensor.distanceMillimeters: ");
+  // Serial.println(sensor.distanceMillimeters);
+
+  amplitudes[sensor.channelUsed] = sensor.amplitude;
+  distances[sensor.channelUsed] = sensor.distanceMillimeters;
+  if (sensor.channelUsed == 2)
   {
-    dataReady = false;
-    // Serial.println("Data ready");
-    sensor.readOutputRegs();
+    AfstandRenewedCycle = true;
+  }
+  // if (sensor.channelUsed == 1)
+  // {
+  //   for (uint8_t i = 0; i < 3; i++)
+  //   {
+  //     Serial.print(amplitudes[i]);
+  //     Serial.print(',');
+  //     Serial.print(distances[i]);
+  //     Serial.print(", ");
+  //   }
+  //   Serial.println();
+  // }
 
-    // Serial.print("sensor.amplitude: ");
-    // Serial.println(sensor.amplitude);
+}
 
-    // Serial.print("sensor.distanceMillimeters: ");
-    // Serial.println(sensor.distanceMillimeters);
+void updateNavigation()
+{
+  unsigned long elapsed = millis() - stateStartTime;
 
-    amplitudes[sensor.channelUsed] = sensor.amplitude;
-    distances[sensor.channelUsed] = sensor.distanceMillimeters;
-    if (sensor.channelUsed == 2)
+  switch (robotState)
+  {
+    case BACKING_UP:
+      if (elapsed < BACKUP_TOTAL_MS)
+        return;
+      stopMotors();
+      turnLeft();
+      changeRobotState(TURN_LEFT);
+      return;
+    case TURN_LEFT:
+      if (elapsed < TURN_LARGE_TOTAL_MS) return;
+      stopMotors();
+      changeRobotState(DRIVE_FORWARD);
+      return;
+    case TURN_RIGHT:
+      if (elapsed < TURN_LARGE_TOTAL_MS) return;
+      stopMotors();
+      changeRobotState(DRIVE_FORWARD);
+      return;
+    case DRIVE_FORWARD:
+      break;
+    case BACKING_UP_OBS_RIGHT:
+      // Serial.print("backing up state, elapsed: ");
+      // Serial.print(elapsed);
+      // Serial.print(" dist[2]: ");
+      // Serial.println(distances[2]);
+      if (elapsed < 200)
+        return;
+      stopMotors();
+      turnLeft();
+      changeRobotState(TURN_LEFT);
+      return;
+    case BACKING_UP_OBS_LEFT:
+      // Serial.print("backing up state, elapsed: ");
+      // Serial.print(elapsed);
+      // Serial.print(" dist[2]: ");
+      // Serial.println(distances[2]);
+      if (elapsed < 200)
+        return;
+      stopMotors();
+      turnRight();
+      changeRobotState(TURN_RIGHT);
+      return;
+  }
+  if (!obstacleCenter)
+  {
+    forward();
+    changeRobotState(DRIVE_FORWARD);
+  }
+  else if (!obstacleLeft && obstacleRight)
+  {
+    stopMotors();
+    if (distances[2] < 150)
     {
-      AfstandRenewedCycle = true;
+      // Serial.print("right obstacle too close: ");
+      // Serial.print("R:"); Serial.print(distances[2]); 
+      // Serial.print(" chUsed:"); Serial.print(sensor.channelUsed);
+      // Serial.print(" obsR:"); Serial.println(obstacleRight);
+      backward();
+      changeRobotState(BACKING_UP_OBS_RIGHT);
+      return;
     }
-    // if (sensor.channelUsed == 1)
-    // {
-    //   for (uint8_t i = 0; i < 3; i++)
-    //   {
-    //     Serial.print(amplitudes[i]);
-    //     Serial.print(',');
-    //     Serial.print(distances[i]);
-    //     Serial.print(", ");
-    //   }
-    //   Serial.println();
-    // }
+    turnLeft();
+    changeRobotState(TURN_LEFT);
+
+  }
+  else if (!obstacleRight && obstacleLeft)
+  {
+    if (distances[0] < 150)
+    {
+      backward();
+      changeRobotState(BACKING_UP_OBS_LEFT);
+      return;
+    }
+    stopMotors();
+    turnRight();
+    changeRobotState(TURN_RIGHT);
+
+  }
+  else if (!obstacleRight && !obstacleLeft)
+  {
+    stopMotors();
+    if (distances[0] >= distances[2])
+    {
+      turnLeft();
+      changeRobotState(TURN_LEFT);
+    }
+    else
+    {
+      turnRight();
+      changeRobotState(TURN_RIGHT);
+    }
+  }
+  else
+  {
+    stopMotors();
+    backward();
+    changeRobotState(BACKING_UP);
 
   }
 }
 
 void updateAfstandOutputValues()
 {
-  
-  // bool obstacleLeft = false;
-  // bool obstacleCenter = false;
-  // bool obstacleRight = false;
-  // && amplitudes[0] > 
-  obstacleLeft = distances[0] > 0 && distances[0] < AFSTAND;
+  obstacleLeft = distances[0] > 0 && distances[0] < AFSTAND + 60;
   obstacleCenter = distances[1] > 0 && distances[1] < AFSTAND;
-  obstacleRight = distances[2] > 0 && distances[2] < AFSTAND;
+  obstacleRight = distances[2] > 0 && distances[2] < AFSTAND + 60;
 }
 
 void loop()
@@ -256,48 +365,12 @@ void loop()
   {
     AfstandRenewedCycle = false;
     updateAfstandOutputValues();
-    if (obstacleCenter)
-    {
-      if (obstacleRight && !obstacleLeft)
-      {
-        stopMotors();
-        delay(400);
-        backward();
-        delay(400);
-        turnLeft();
-        delay(400);
-        stopMotors();
-      }
-      else if (obstacleLeft && !obstacleRight)
-      {
-        stopMotors();
-        delay(400);
-        backward();
-        delay(400);
-        turnRight();
-        delay(400);
-        stopMotors();
-      }
-      else
-      {
-        stopMotors();
-        delay(400);
-        backward();
-        delay(900);
-        turnLeft();
-        delay(4000);
-        stopMotors();
-      }
-    }
-    else
-    {
-      forward();
-    }
+    // Serial.print("L:"); Serial.print(distances[0]); Serial.print(" A:"); Serial.print(amplitudes[0]);
+    // Serial.print(" obsL:"); Serial.println(obstacleLeft);
+    // Serial.print("C:"); Serial.print(distances[1]); Serial.print(" obsC:"); Serial.println(obstacleCenter);
+    // Serial.print("R:"); Serial.print(distances[2]); Serial.print(" A:"); Serial.print(amplitudes[2]);
+    // Serial.print(" obsR:"); Serial.println(obstacleRight);
   }
-
-  // forward();
-  // delay(4000);
-  // stopMotors();
-  // delay(1000);
+  updateNavigation();
 
 }
