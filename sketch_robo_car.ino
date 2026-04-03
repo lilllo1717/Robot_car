@@ -44,6 +44,11 @@ volatile bool dataReady = false;
 bool AfstandRenewedCycle = false;
 unsigned long stateStartTime = 0;
 
+int16_t peekRightDistance = 0;
+int16_t peekLeftDistance  = 0;
+bool peekReturnToRight = false;
+bool peekReturnToLeft = false;
+
 enum RobotState
 {
   DRIVE_FORWARD,
@@ -52,6 +57,12 @@ enum RobotState
   BACKING_UP,
   BACKING_UP_OBS_RIGHT,
   BACKING_UP_OBS_LEFT,
+  CHECKOUT_RIGHT,
+  PEEK_RIGHT_COME_BACK,
+  PEEK_RETURN_CENTER,
+  PEEK_RIGHT_TURN,
+  PEEK_LEFT_TURN,
+  BACKING_UP_TURN_AROUND,
 };
 
 void setDataReadyFlag()
@@ -129,6 +140,53 @@ void backward()
   analogWrite(M2_PWM2, speedBackward);
   analogWrite(M1_PWM1, speedBackward);
   analogWrite(M1_PWM2, speedBackward);
+}
+
+// void backwardLeft()
+// {
+//   digitalWrite(M2_DIR1, HIGH);
+//   digitalWrite(M2_DIR2, HIGH);
+//   digitalWrite(M1_DIR1, LOW);
+//   digitalWrite(M1_DIR2, LOW);
+
+//   analogWrite(M2_PWM1, speedBackward);
+//   analogWrite(M2_PWM2, speedBackward);
+//   analogWrite(M1_PWM1, speedBackward);
+//   analogWrite(M1_PWM2, speedBackward);
+// }
+
+void backwardLeft()
+{
+  // stopMotors();
+
+  // backward directions
+  Serial.print("backwardLeft ");
+  digitalWrite(M2_DIR1, HIGH); // rear left
+  digitalWrite(M2_DIR2, HIGH); // rear right
+  digitalWrite(M1_DIR1, LOW);  // front left
+  digitalWrite(M1_DIR2, LOW);  // front right
+
+  analogWrite(M2_PWM1, speedBackward);
+  analogWrite(M1_PWM2, speedBackward);
+  analogWrite(M2_PWM2, 0);
+  analogWrite(M1_PWM1, 0);
+}
+
+void backwardRight()
+{
+  // stopMotors();
+
+  // backward directions
+  Serial.print("backwardLeft ");
+  digitalWrite(M2_DIR1, HIGH); // rear left
+  digitalWrite(M2_DIR2, HIGH); // rear right
+  digitalWrite(M1_DIR1, LOW);  // front left
+  digitalWrite(M1_DIR2, LOW);  // front right
+
+  analogWrite(M2_PWM1, 0);
+  analogWrite(M1_PWM2, 0);
+  analogWrite(M2_PWM2, speedBackward);
+  analogWrite(M1_PWM1, speedBackward);
 }
 
 void turnLeft()
@@ -244,6 +302,12 @@ void getSensorData()
 
 }
 
+// void checkoutSurroundings()
+// {
+//   changeRobotState(PEEK_RIGHT);
+
+// }
+
 void updateNavigation()
 {
   unsigned long elapsed = millis() - stateStartTime;
@@ -254,8 +318,12 @@ void updateNavigation()
       if (elapsed < BACKUP_TOTAL_MS)
         return;
       stopMotors();
-      turnLeft();
-      changeRobotState(TURN_LEFT);
+      //turn tiny bit to the right
+      ////check if there is an obstacle
+      /////if obstacle turn to the teft
+      // backward();
+      // turnLeft();
+      // changeRobotState(TURN_LEFT);
       return;
     case TURN_LEFT:
       if (elapsed < TURN_LARGE_TOTAL_MS) return;
@@ -277,7 +345,7 @@ void updateNavigation()
       if (elapsed < 200)
         return;
       stopMotors();
-      turnLeft();
+      backwardLeft();
       changeRobotState(TURN_LEFT);
       return;
     case BACKING_UP_OBS_LEFT:
@@ -288,8 +356,90 @@ void updateNavigation()
       if (elapsed < 200)
         return;
       stopMotors();
+      backward();
+      changeRobotState(TURN_RIGHT);
+      return;
+    case PEEK_RETURN_CENTER:
+      if (elapsed < 100)
+        return;
+      // stopMotors();
+      if (peekReturnToLeft == true)
+      {
+        // turnLeft();
+        changeRobotState(PEEK_LEFT_TURN);
+        return;
+      }
+      else
+      {
+        turnRight();
+        changeRobotState(PEEK_RIGHT_COME_BACK);
+        return;
+      }
+    case BACKING_UP_TURN_AROUND:
+    {
+      Serial.println("BACKING_UP_TURN_AROUND :");
+      if (elapsed < 300)
+        return;
+      turnLeft();
+      if (elapsed < 1400)
+        return;
+      changeRobotState(DRIVE_FORWARD);
+      return;
+    }
+    case PEEK_LEFT_TURN:
+    
+      if (elapsed < 100)
+        return;
+      stopMotors();
+      // if (elapsed < 150) return;
+      if (!AfstandRenewedCycle)
+        return;
+      AfstandRenewedCycle = false;
+      // peekLeftDistance = min(distances[0], distances[1]);
+      peekLeftDistance = distances[0];
+      Serial.print(" peekLeftDistance :"); Serial.println(peekLeftDistance);
+      if (peekLeftDistance < 150 && peekRightDistance < 150)
+      {
+        // Serial.println("BACKING_UP_TURN_AROUND :");
+        backward();
+        changeRobotState(BACKING_UP_TURN_AROUND);
+      }
+      else if (peekLeftDistance >= peekRightDistance)
+      {
+        Serial.print(" peek and turn left:");
+        turnLeft();
+        changeRobotState(TURN_LEFT);
+      }
+      else
+      {
+        Serial.println(" peek and turn right: ");
+        turnRight();
+        peekReturnToLeft = false;
+        changeRobotState(PEEK_RETURN_CENTER);
+        // turnRight();
+        // changeRobotState(TURN_RIGHT);
+      }
+      return;
+    case PEEK_RIGHT_COME_BACK:
+      if (elapsed < 100)
+        return;
+      // stopMotors();
       turnRight();
       changeRobotState(TURN_RIGHT);
+      return;
+    case PEEK_RIGHT_TURN:
+      if (elapsed < 100)
+        return;
+      stopMotors();
+      if (!AfstandRenewedCycle)
+        return;
+      AfstandRenewedCycle = false;
+      // peekRightDistance = min(distances[1], distances[2]);
+      peekRightDistance = distances[2];
+      Serial.print(" peekRightDistance :"); Serial.println(peekRightDistance);
+      turnLeft();
+      changeRobotState(PEEK_RETURN_CENTER);
+      peekReturnToLeft = true;
       return;
   }
   if (!obstacleCenter)
@@ -297,16 +447,22 @@ void updateNavigation()
     forward();
     changeRobotState(DRIVE_FORWARD);
   }
+  else if (obstacleCenter)
+  {
+    stopMotors();
+    turnRight();
+    changeRobotState(PEEK_RIGHT_TURN);
+  }
   else if (!obstacleLeft && obstacleRight)
   {
     stopMotors();
-    if (distances[2] < 150)
+    if (distances[2] < 300)
     {
       // Serial.print("right obstacle too close: ");
       // Serial.print("R:"); Serial.print(distances[2]); 
       // Serial.print(" chUsed:"); Serial.print(sensor.channelUsed);
       // Serial.print(" obsR:"); Serial.println(obstacleRight);
-      backward();
+      // backwardLeft();
       changeRobotState(BACKING_UP_OBS_RIGHT);
       return;
     }
@@ -346,7 +502,7 @@ void updateNavigation()
     stopMotors();
     backward();
     changeRobotState(BACKING_UP);
-
+  
   }
 }
 
@@ -361,7 +517,7 @@ void loop()
 {
   getSensorData();
 
-  if (AfstandRenewedCycle)
+  if (AfstandRenewedCycle && robotState == DRIVE_FORWARD)
   {
     AfstandRenewedCycle = false;
     updateAfstandOutputValues();
