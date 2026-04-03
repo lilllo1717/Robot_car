@@ -1,5 +1,9 @@
 #  Robot Car Project
 
+
+![Robot car demo](images/IMG_2980.gif)
+
+
 ##  Overview  
 Designing interactive robot car
 
@@ -13,13 +17,5 @@ Designing interactive robot car
 ---
 
 ##  Materials  
-
-
-### 📸 Current State of the Robot  
-
-<p align="center">
-  <img src="images/IMG_0807.jpg" width="350">
-</p>
-
 
 

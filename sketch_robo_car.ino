@@ -360,7 +360,7 @@ void updateNavigation()
       changeRobotState(TURN_RIGHT);
       return;
     case PEEK_RETURN_CENTER:
-      if (elapsed < 100)
+      if (elapsed < 200)
         return;
       // stopMotors();
       if (peekReturnToLeft == true)
@@ -388,7 +388,7 @@ void updateNavigation()
     }
     case PEEK_LEFT_TURN:
     
-      if (elapsed < 100)
+      if (elapsed < 200)
         return;
       stopMotors();
       // if (elapsed < 150) return;
@@ -421,14 +421,14 @@ void updateNavigation()
       }
       return;
     case PEEK_RIGHT_COME_BACK:
-      if (elapsed < 100)
+      if (elapsed < 200)
         return;
       // stopMotors();
       turnRight();
       changeRobotState(TURN_RIGHT);
       return;
     case PEEK_RIGHT_TURN:
-      if (elapsed < 100)
+      if (elapsed < 200)
         return;
       stopMotors();
       if (!AfstandRenewedCycle)
@@ -446,6 +446,13 @@ void updateNavigation()
   {
     forward();
     changeRobotState(DRIVE_FORWARD);
+  }
+  else if (obstacleCenter && obstacleLeft && obstacleRight)
+  {
+    Serial.print(" distances[0] when obstacleCenter && obstacleLeft && obstacleRight:"); Serial.println(distances[0]);
+    stopMotors();
+    backward();
+    changeRobotState(BACKING_UP_TURN_AROUND);
   }
   else if (obstacleCenter)
   {
@@ -508,9 +515,9 @@ void updateNavigation()
 
 void updateAfstandOutputValues()
 {
-  obstacleLeft = distances[0] > 0 && distances[0] < AFSTAND + 60;
-  obstacleCenter = distances[1] > 0 && distances[1] < AFSTAND;
-  obstacleRight = distances[2] > 0 && distances[2] < AFSTAND + 60;
+  obstacleLeft = distances[0] > 0 && distances[0] < AFSTAND ;
+  obstacleCenter = distances[1] > 0 && distances[1] < AFSTAND ;
+  obstacleRight = distances[2] > 0 && distances[2] < AFSTAND;
 }
 
 void loop()
